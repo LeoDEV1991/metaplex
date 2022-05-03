@@ -2,7 +2,9 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Button, Card, Carousel, Col, List, Row, Skeleton } from 'antd';
 import { AuctionCard } from '../../components/AuctionCard';
-import { Connection } from '@solana/web3.js';
+import { Connection, ValidatorInfo, PublicKey, Keypair } from '@solana/web3.js';
+import * as solanaWeb3 from '@solana/web3.js';
+
 import { AuctionViewItem } from '@oyster/common/dist/lib/models/metaplex/index';
 import {
   AuctionView as Auction,
@@ -40,6 +42,9 @@ import { MetaAvatar, MetaAvatarDetailed } from '../../components/MetaAvatar';
 import { AmountLabel } from '../../components/AmountLabel';
 import { ClickToCopy } from '../../components/ClickToCopy';
 import { useTokenList } from '../../contexts/tokenList';
+
+import axios from "axios";
+
 
 export const AuctionItem = ({
   item,
@@ -80,6 +85,27 @@ export const AuctionItem = ({
   );
 };
 
+
+const CONFIG_PROGRAM_ID = new PublicKey('Config1111111111111111111111111111111111111');
+// const CONFIG_VOTE_ID = new PublicKey('Vote111111111111111111111111111111111111111');
+async function getValidatorInfo(connection: Connection, voteIdentity: string) {
+  const validatorInfoAccounts = await connection.getProgramAccounts(CONFIG_PROGRAM_ID);
+  // console.log(validatorInfoAccounts.length);  
+    
+  
+  let validatorName : string = "";
+  for (let i = 0; i < validatorInfoAccounts.length; i++) {
+    const validatorInfo = ValidatorInfo.fromConfigData(validatorInfoAccounts[i].account.data);    
+    if(validatorInfo?.key.toString() == voteIdentity)
+    {
+      validatorName = JSON.parse(JSON.stringify(validatorInfo?.info)).name;      
+      break;
+    }
+  }
+  return validatorName;
+}
+
+
 export const AuctionView = () => {
   const { width } = useWindowDimensions();
   const { id } = useParams<{ id: string }>();
@@ -90,8 +116,30 @@ export const AuctionView = () => {
   const { ref, data } = useExtendedArt(auction?.thumbnail.metadata.pubkey);
   const creators = useCreators(auction);
   const { pullAuctionPage } = useMeta();
-  useEffect(() => {
+
+  const [currentYield, setCurrentYield] = useState(0);
+  const [validatorName, setValidatorName] = useState("");
+
+    useEffect(() => {
     pullAuctionPage(id);
+
+
+    // const connection = new solanaWeb3.Connection("https://api.devnet.solana.com");
+    const connection = new solanaWeb3.Connection("https://api.mainnet-beta.solana.com", "confirmed");      
+    // getValidatorInfo(connection, "EvnRmnMrd69kFdbLMxWkTn1icZ7DCceRhvmb2SJXqDo4").then((response) => {           
+    getValidatorInfo(connection, attributes?.[2].value as string).then((response) => {
+      setValidatorName(response);
+      console.log(validatorName);
+    }); 
+
+    //set current yield for given validator    
+    // const getSolanaBeachURL = "https://public-api.solanabeach.io/v1/validator/" + "LvmTxRZAwJBtPuTSWU25UQBQu9N8TnsJJDemusfDDXB";
+    const getSolanaBeachURL = "https://public-api.solanabeach.io/v1/validator/" + attributes?.[1].value;
+      axios.get(getSolanaBeachURL).then((response) => {              
+        let validatorData = JSON.parse(JSON.stringify(response.data));
+        console.log(validatorData.validator.activatedStake);     
+        setCurrentYield(validatorData.validator.activatedStake / 10000);   
+      });    
   }, []);
 
   let edition = '';
@@ -109,6 +157,8 @@ export const AuctionView = () => {
   const hasDescription = data === undefined || data.description === undefined;
   const description = data?.description;
   const attributes = data?.attributes;
+   
+  
 
   const tokenInfo = useTokenList()?.subscribedTokens.filter(
     m => m.address == auction?.auction.info.tokenMint,
@@ -321,16 +371,20 @@ export const AuctionView = () => {
             {art.title || <Skeleton paragraph={{ rows: 0 }} />}
           </h2>
           <Row gutter={[44, 0]}>
-            <Col span={12} md={16}>
+            <Col span={12} md={18}>
               <div className={'info-container'}>
                 <div className={'info-component'}>
-                  <h6 className={'info-title'}>CREATED BY</h6>
-                  <span>{<MetaAvatar creators={creators} />}</span>
+                  {/* <h6 className={'info-title'}>CREATED BY</h6> */}
+                  <h6 className={'info-title'}>Artist</h6>
+                  {/* <span>{<MetaAvatar creators={creators} />}</span> */}
+                  <span> Oleksandr </span>
                 </div>
                 <div className={'info-component'}>
-                  <h6 className={'info-title'}>Edition</h6>
+                  {/* <h6 className={'info-title'}>Edition</h6> */}
+                  <h6 className={'info-title'}>Validator</h6>
                   <span>
-                    {(auction?.items.length || 0) > 1 ? 'Multiple' : edition}
+                    {/* {(auction?.items.length || 0) > 1 ? 'Multiple' : edition} */}
+                    {validatorName}
                   </span>
                 </div>
                 <div className={'info-component'}>
@@ -377,9 +431,16 @@ export const AuctionView = () => {
                     />
                   </span>
                 </div>
+                <div className={'info-component'}>
+                  <h6 className={'info-title'}>Current</h6>
+                  <h6 className={'info-title'}>Yield</h6>
+                  <span>{currentYield}</span>
+                  <br></br>
+                  <span>SOL P/E</span>
+                </div>
               </div>
             </Col>
-            <Col span={12} md={8} className="view-on-container">
+            <Col span={12} md={6} className="view-on-container">
               <div className="info-view-container">
                 <div className="info-view">
                   <h6 className="info-title">View on</h6>
@@ -692,3 +753,6 @@ export const AuctionBids = ({
     </Row>
   );
 };
+
+
+
